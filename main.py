@@ -22,14 +22,18 @@ if __name__ == "__main__":
         root="./data", train=False, transform=cifar10Transformation()
     )
 
-    # TODO Clarify what to clear
-    if args.mode != "Random":
-        path_to_init = ["fit_clients", "fit_server", "loss_avg",
-                        "train_loss", "val_accu", "val_loss"]
-        for _ in path_to_init:
-            if Path("output/" + _ + "/").exists():
-                shutil.rmtree("output/" + _ + "/")
-            os.mkdir("output/" + _ + "/")
+    # clear previous records
+    path_to_init = ["fit_clients", "fit_server", "loss_avg",
+                    "train_loss", "val_accu", "val_loss"]
+    for _ in path_to_init:
+        if Path("output/" + _ + "/").exists():
+            shutil.rmtree("output/" + _ + "/")
+        os.mkdir("output/" + _ + "/")
+
+    with open("./output/reward.txt", mode='w') as outputFile:
+        outputFile.write("")
+    with open("./output/involvement_history.txt", mode='w') as outputFile:
+        outputFile.write("")
 
     client_resources = {
         "num_cpus": args.num_client_cpus,
@@ -39,9 +43,9 @@ if __name__ == "__main__":
     parameter_dict_list = []
     for _ in range(pool_size):
         parameter_dict_list.append(dict())
-    with open("./parameters/cyclePerBit.txt") as inputFile:
-        for _ in range(pool_size):
-            parameter_dict_list[_]["cyclePerBit"] = eval(inputFile.readline()) # TODO Delete?
+    # with open("./parameters/cyclePerBit.txt") as inputFile:
+    #     for _ in range(pool_size):
+    #         parameter_dict_list[_]["cyclePerBit"] = eval(inputFile.readline())
     with open("./parameters/dataSize.txt") as inputFile:
         for _ in range(pool_size):
             parameter_dict_list[_]["dataSize"] = eval(inputFile.readline())

@@ -1,6 +1,6 @@
 import math
 import random
-from logging import WARNING
+from logging import DEBUG, WARNING
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import flwr.common
@@ -24,12 +24,12 @@ from dataset_utils import cifar10Transformation
 
 
 class MAB_ClientManager(SimpleClientManager):
-    def sample(self, num_clients: int, server_round=0, time_constr=500):
+    def sample(self, num_clients: int, server_round=0, time_constr=0):
         # For model initialization
         if num_clients == 1:
             return [self.clients[str(random.randint(0, pool_size - 1))]]
 
-        # For evaluation
+        # For evaluation, use the same devices as in the fit round
         elif num_clients == -1:
             with open(
                     "./output/fit_server/round_{}.txt".format(server_round),
@@ -41,10 +41,8 @@ class MAB_ClientManager(SimpleClientManager):
         # Sample clients which meet the criterion
         param_dicts = []
         available_cids = []
-        total_data_amount = 0
-        P = dict()
-        for _ in range(pool_size + 1):
-            P[_] = []
+
+        C_record = []
 
         for n in range(pool_size):
             # Get each client's parameters
@@ -54,79 +52,93 @@ class MAB_ClientManager(SimpleClientManager):
                 ).properties.copy()
             )
 
-            # Calculate max tolerating number of peers
-            t_upload_available = time_constr - param_dicts[n]["updateTime"]
-            max_peer = math.floor(
-                t_upload_available * sys_bandwidth * math.log2(
-                    1 + sys_channelGain * param_dicts[n]["transPower"] / sys_bgNoise
-                ) / sys_modelSize
-            )
-            if max_peer < 0:
-                max_peer = 0
-            if max_peer > pool_size:
-                max_peer = pool_size
-
-            param_dicts[n]["maxPeer"] = max_peer
-            P[max_peer].append(n)
-
             param_dicts[n]["isSelected"] = False
+            param_dicts[n]["C"] = param_dicts[n]["updateTime"] / time_constr
 
-        # TCS algorithm
-        for j in range(1, pool_size + 1):
-            S = []  # all clients that tolerate j peers
-            K_j = []  # available cids under j-peer condition
-            D_j = 0  # total data amount under j-peer condition
+            C_record.append(param_dicts[n]["C"])
+        
+        with open("./output/C_records/round_{}.txt".format(server_round), mode='w') as outputFile:
+            outputFile.write(str(C_record))
 
-            # you are available since you tolerate more than j peers
-            for m in range(j, pool_size + 1):
-                S += P[m]
+        # 1st iteration: data size only
+        if server_round == 1:
+            for i in range(pool_size):
+                param_dicts[i]["D"] = param_dicts[i]["dataSize"]
 
-            # select the most data-rich j clients
-            l = j
-            while l > 0:
-                l -= 1
+            available_cids = sorted(
+                range(pool_size), key=lambda i: param_dicts[i]["dataSize"], reverse=True
+            )[:num_to_choose]
 
-                # S is empty
-                if not S:
-                    continue
+        # Common cases
+        else:
+            with open("./output/involvement_history.txt", mode='r') as inputFile:
+                involvement_history = eval(inputFile.readline())
 
-                # argmax
-                max_data_amount = 0
-                index_with_max_data = -1
-                for s in S:
-                    if param_dicts[s]["dataSize"] > max_data_amount:
-                        max_data_amount = param_dicts[s]["dataSize"]
-                        index_with_max_data = s
+            with open("./output/fit_server/round_{}.txt".format(server_round - 1)) \
+                    as inputFile:
+                cids_in_prev_round = eval(inputFile.readline())["clients_selected"]
 
-                K_j.append(index_with_max_data)
-                D_j += param_dicts[index_with_max_data]["dataSize"]
-                S.remove(index_with_max_data)
+            loss_of_prev_round = []
+            for n in range(pool_size):
+                with open("./output/train_loss/client_{}.txt".format(n)) as inputFile:
+                    loss_of_prev_round.append(eval(inputFile.readlines()[-1]))
+                if n in cids_in_prev_round:
+                    assert loss_of_prev_round[-1] > 0
+                else:
+                    assert loss_of_prev_round[-1] == -1
+                    loss_of_prev_round[-1] = 1
 
-            if D_j > total_data_amount:
-                total_data_amount = D_j
-                available_cids = K_j.copy()
+            for i in range(pool_size):
+                param_dicts[i]["D"] = param_dicts[i]["dataSize"] \
+                     * loss_of_prev_round[i] / (involvement_history[i] + 1)
+                
+            sum_of_prev_C = [0 for _ in range(pool_size)]
+            for t in range(1, server_round):
+                with open("./output/fit_server/round_{}.txt".format(t)) as inputFile:
+                    cids_in_t_round = eval(inputFile.readline())["clients_selected"]
+                with open("./output/C_records/round_{}.txt".format(t)) as inputFile:
+                    C_in_t_round = eval(inputFile.readline())
+                for _ in range(pool_size):
+                    if _ in cids_in_t_round:
+                        sum_of_prev_C += C_in_t_round[_]
+            
+            UCB_mu = [sum_of_prev_C[i] / (involvement_history[i] + 1) for i in range(pool_size)]
+            UCB_U = [
+                UCB_mu[i] + math.sqrt(
+                    (num_to_choose + 1) * math.log(server_round) / (involvement_history[i] + 1)
+                ) \
+                for i in range(pool_size)
+            ]
+            UCB_omega = [
+                -UCB_U[i] - beta * math.pow(math.e, (-param_dicts[i]["D"])) \
+                for i in range(pool_size)
+            ]
+
+            available_cids = sorted(
+                range(pool_size), key=lambda i: UCB_omega[i], reverse=True
+            )[:num_to_choose]
 
         # Record client parameters
-        for n in range(pool_size):
-            param_dicts[n]["bandwidth"] = sys_bandwidth / len(available_cids)
-            param_dicts[n]["transRate"] = \
-                param_dicts[n]["bandwidth"] * math.log2(
-                    1 + sys_channelGain * param_dicts[n]["transPower"] / sys_bgNoise
-                )
-            param_dicts[n]["uploadTime"] = sys_modelSize / param_dicts[n]["transRate"]
-            param_dicts[n]["totalTime"] = \
-                param_dicts[n]["updateTime"] + param_dicts[n]["uploadTime"]
-
         fit_round_time = 0
         for _ in available_cids:
             param_dicts[_]["isSelected"] = True
-            if param_dicts[_]["totalTime"] > fit_round_time:
-                fit_round_time = param_dicts[_]["totalTime"]
+            if param_dicts[_]["updateTime"] > fit_round_time:
+                fit_round_time = param_dicts[_]["updateTime"]
+
+        # Record reward
+        reward = 0
+        for k in available_cids:
+            reward += (-param_dicts[k]["C"] - beta * math.pow(math.e, (-param_dicts[k]["D"])))
+        reward *= (1 / num_to_choose)
+        with open("./output/reward.txt", mode='a') as outputFile:
+            outputFile.write(str(reward))
+
+        log(DEBUG, "Round " + str(server_round) + " selected cids " + str(available_cids))
+        log(DEBUG, "Round " + str(server_round) + " reward: " + str(reward))
 
         return [self.clients[str(cid)] for cid in available_cids], \
             {
                 "clients_selected": available_cids,
-                "data_amount": total_data_amount,
                 "time_elapsed": fit_round_time,
                 "time_constraint": time_constr
             }, \
@@ -134,7 +146,7 @@ class MAB_ClientManager(SimpleClientManager):
 
 
 class Random_ClientManager(SimpleClientManager):
-    def sample(self, num_clients: int, server_round=0, time_constr=500):
+    def sample(self, num_clients: int, server_round=0, time_constr=0):
         # For model initialization
         if num_clients == 1:
             return [self.clients[str(random.randint(0, pool_size - 1))]]
@@ -169,21 +181,13 @@ class Random_ClientManager(SimpleClientManager):
                 ).properties.copy()
             )
 
-            # Record client parameters
-            param_dicts[n]["bandwidth"] = sys_bandwidth / len(available_cids)
-            param_dicts[n]["transRate"] = \
-                param_dicts[n]["bandwidth"] * math.log2(
-                    1 + sys_channelGain * param_dicts[n]["transPower"] / sys_bgNoise
-                )
-            param_dicts[n]["uploadTime"] = sys_modelSize / param_dicts[n]["transRate"]
-            param_dicts[n]["totalTime"] = \
-                param_dicts[n]["updateTime"] + param_dicts[n]["uploadTime"]
+            param_dicts[n]["isSelected"] = False
 
         fit_round_time = 0
         for _ in available_cids:
             param_dicts[_]["isSelected"] = True
-            if param_dicts[_]["totalTime"] > fit_round_time:
-                fit_round_time = param_dicts[_]["totalTime"]
+            if param_dicts[_]["updateTime"] > fit_round_time:
+                fit_round_time = param_dicts[_]["updateTime"]
 
         return [self.clients[str(cid)] for cid in available_cids], \
             {
@@ -194,7 +198,7 @@ class Random_ClientManager(SimpleClientManager):
             param_dicts
 
 
-class BSFL(Strategy):#TODO BSFL strategy
+class BSFL(Strategy):
     # pylint: disable=too-many-arguments,too-many-instance-attributes,line-too-long
     def __init__(
             self,
@@ -287,6 +291,19 @@ class BSFL(Strategy):#TODO BSFL strategy
                             mode='a'
                     ) as outputFile:
                         outputFile.write("-1" + "\n")
+
+            # Record historic involvements
+            with open("./output/involvement_history.txt", mode='r') as inputFile:
+                fileLine = inputFile.readline()
+                if not fileLine:
+                    involvement_history = [0 for _ in range(pool_size)]
+                else:
+                    involvement_history = eval(fileLine)
+            for _ in range(pool_size):
+                if _ in clients_of_prev_round:
+                    involvement_history[_] += 1
+            with open("./output/involvement_history.txt", mode='w') as outputFile:
+                outputFile.write(str(involvement_history))
 
         # Time constraint
         if server_round == 1:

@@ -1,5 +1,6 @@
 import os.path
 import random
+from dataset_utils import get_dataloader
 
 from constants import *
 from dataset_utils import get_cifar_10, do_fl_partitioning
@@ -19,27 +20,37 @@ fed_dir = do_fl_partitioning(
 # Record dataset sizes (bit)
 with open("./parameters/dataSize.txt", mode='w') as outputFile:
     for n in range(pool_size):
+        n_DL = get_dataloader(
+            "./data/cifar-10-batches-py/federated/",
+            str(n),
+            is_train=True,
+            batch_size=1,
+            workers=50
+        )
         outputFile.write(
-            str( # TODO 
-                8 * os.path.getsize(
-                    "./data/cifar-10-batches-py/federated/" + str(n) + "/train.pt"
-                )
+            str(
+                # 8 * os.path.getsize(
+                #     "./data/cifar-10-batches-py/federated/" + str(n) + "/train.pt"
+                # )
+
+                len(n_DL)
             )
             + "\n"
         )
 print("Dataset initialization completed")
 
-# Define CPU/GPU frequency
+# Define CPU/GPU frequency (FLOPs)
+# *** frequency is actually flops! ***
 with open("./parameters/frequency.txt", mode='w') as outputFile:
     for n in range(pool_size):
-        outputFile.write(str(random.uniform(100e6, 2e9)) + "\n")
+        outputFile.write(str(random.uniform(1e8, 5e9)) + "\n")
 print("CPU/GPU frequency initialization completed")
 
 # Define cycles per bit
-with open("./parameters/cyclePerBit.txt", mode='w') as outputFile:
-    for n in range(pool_size):
-        outputFile.write(str(random.uniform(50, 200)) + "\n")
-print("Cycles per bit initialization completed")
+# with open("./parameters/cyclePerBit.txt", mode='w') as outputFile:
+#     for n in range(pool_size):
+#         outputFile.write(str(random.uniform(50, 200)) + "\n")
+# print("Cycles per bit initialization completed")
 
 # Define transmission power
 with open("./parameters/transPower.txt", mode='w') as outputFile:

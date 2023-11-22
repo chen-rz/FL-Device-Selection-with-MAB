@@ -12,6 +12,7 @@ from flwr.common import Scalar
 
 from dataset_utils import get_dataloader
 from utils import *
+from constants import sys_modelFlops
 
 
 # Flower client
@@ -29,13 +30,12 @@ class FlowerClient(fl.client.NumPyClient):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         # Random initialized parameters
-        self.properties["cyclePerBit"] = param_dict["cyclePerBit"]
+        # self.properties["cyclePerBit"] = param_dict["cyclePerBit"]
         self.properties["dataSize"] = param_dict["dataSize"]
-        self.properties["frequency"] = param_dict["frequency"]
+        self.properties["frequency"] = param_dict["frequency"] # *** frequency is actually flops! ***
         self.properties["transPower"] = param_dict["transPower"]
-        self.properties["updateTime"] = \
-            fit_config(0)["epochs"] * self.properties["cyclePerBit"] * self.properties["dataSize"] \
-            / self.properties["frequency"]
+
+        self.properties["updateTime"] = fit_config(0)["epochs"] * sys_modelFlops / self.properties["frequency"]
 
     def get_properties(self, config) -> Dict[str, Scalar]:
         return self.properties
