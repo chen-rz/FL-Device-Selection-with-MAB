@@ -23,8 +23,8 @@ class FlowerClient(fl.client.NumPyClient):
         self.properties: Dict[str, Scalar] = {"tensor_type": "numpy.ndarray"}
 
         # Instantiate model
-        # self.net = LeNet()
-        self.net = AlexNet()
+        self.net = LeNet()
+        # self.net = AlexNet()
 
         # Determine device
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -146,8 +146,8 @@ def get_evaluate_fn(test_set: torchvision.datasets.CIFAR10, ):
         # determine device
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        # model = LeNet()
-        model = AlexNet()
+        model = LeNet()
+        # model = AlexNet()
 
         set_params(model, parameters)
         model.to(device)

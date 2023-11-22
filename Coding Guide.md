@@ -8,6 +8,8 @@ Network classes
 2. def get_evaluate_fn model=
 ### dataset_utils.py
 def cifar10Transformation()
+### constant.py
+sys_modelFlops=
 
 ## torch.device
 ### client.py

@@ -30,4 +30,4 @@ sys_modelFlops = 523878 # LeNet
 # sys_modelFlops = 712651338 # AlexNet
 
 # Global time constraint (s)
-timeConstrGlobal = 800
+timeConstrGlobal = 2000

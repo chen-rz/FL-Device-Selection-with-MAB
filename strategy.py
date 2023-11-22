@@ -59,6 +59,8 @@ class MAB_ClientManager(SimpleClientManager):
         
         with open("./output/C_records/round_{}.txt".format(server_round), mode='w') as outputFile:
             outputFile.write(str(C_record))
+        
+        log(DEBUG, "Wrote C_record: " + str(C_record))
 
         # 1st iteration: data size only
         if server_round == 1:
@@ -74,9 +76,13 @@ class MAB_ClientManager(SimpleClientManager):
             with open("./output/involvement_history.txt", mode='r') as inputFile:
                 involvement_history = eval(inputFile.readline())
 
+            log(DEBUG, "Involvement history: " + str(involvement_history))
+
             with open("./output/fit_server/round_{}.txt".format(server_round - 1)) \
                     as inputFile:
                 cids_in_prev_round = eval(inputFile.readline())["clients_selected"]
+
+            log(DEBUG, "Cids in previous round: " + str(cids_in_prev_round))
 
             loss_of_prev_round = []
             for n in range(pool_size):
@@ -87,6 +93,8 @@ class MAB_ClientManager(SimpleClientManager):
                 else:
                     assert loss_of_prev_round[-1] == -1
                     loss_of_prev_round[-1] = 1
+
+            log(DEBUG, "Loss in previous round: " + str(loss_of_prev_round))
 
             for i in range(pool_size):
                 param_dicts[i]["D"] = param_dicts[i]["dataSize"] \
@@ -100,19 +108,29 @@ class MAB_ClientManager(SimpleClientManager):
                     C_in_t_round = eval(inputFile.readline())
                 for _ in range(pool_size):
                     if _ in cids_in_t_round:
-                        sum_of_prev_C += C_in_t_round[_]
+                        sum_of_prev_C[_] += C_in_t_round[_]
+
+            log(DEBUG, "Sum of C in previous round: " + str(sum_of_prev_C))
             
             UCB_mu = [sum_of_prev_C[i] / (involvement_history[i] + 1) for i in range(pool_size)]
+
+            log(DEBUG, "UCB_mu: " + str(UCB_mu))
+
             UCB_U = [
                 UCB_mu[i] + math.sqrt(
                     (num_to_choose + 1) * math.log(server_round) / (involvement_history[i] + 1)
                 ) \
                 for i in range(pool_size)
             ]
+
+            log(DEBUG, "UCB_U: " + str(UCB_U))
+
             UCB_omega = [
                 -UCB_U[i] - beta * math.pow(math.e, (-param_dicts[i]["D"])) \
                 for i in range(pool_size)
             ]
+
+            log(DEBUG, "UCB_omega: " + str(UCB_omega))
 
             available_cids = sorted(
                 range(pool_size), key=lambda i: UCB_omega[i], reverse=True
@@ -131,7 +149,7 @@ class MAB_ClientManager(SimpleClientManager):
             reward += (-param_dicts[k]["C"] - beta * math.pow(math.e, (-param_dicts[k]["D"])))
         reward *= (1 / num_to_choose)
         with open("./output/reward.txt", mode='a') as outputFile:
-            outputFile.write(str(reward))
+            outputFile.write(str(reward) + "\n")
 
         log(DEBUG, "Round " + str(server_round) + " selected cids " + str(available_cids))
         log(DEBUG, "Round " + str(server_round) + " reward: " + str(reward))
