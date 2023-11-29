@@ -43,6 +43,7 @@ class MAB_ClientManager(SimpleClientManager):
         available_cids = []
 
         C_record = []
+        updateTimeList = []
 
         for n in range(pool_size):
             # Get each client's parameters
@@ -53,8 +54,12 @@ class MAB_ClientManager(SimpleClientManager):
             )
 
             param_dicts[n]["isSelected"] = False
-            param_dicts[n]["C"] = param_dicts[n]["updateTime"] / time_constr
+            updateTimeList.append(param_dicts[n]["updateTime"])
 
+        C_min = min(updateTimeList)
+        C_max = max(updateTimeList)
+        for n in range(pool_size):
+            param_dicts[n]["C"] = (param_dicts[n]["updateTime"] - C_min) / (C_max - C_min)
             C_record.append(param_dicts[n]["C"])
         
         with open("./output/C_records/round_{}.txt".format(server_round), mode='w') as outputFile:
@@ -85,14 +90,20 @@ class MAB_ClientManager(SimpleClientManager):
             log(DEBUG, "Cids in previous round: " + str(cids_in_prev_round))
 
             loss_of_prev_round = []
+            sum_of_loss_of_prev = 0.0
             for n in range(pool_size):
                 with open("./output/train_loss/client_{}.txt".format(n)) as inputFile:
                     loss_of_prev_round.append(eval(inputFile.readlines()[-1]))
                 if n in cids_in_prev_round:
                     assert loss_of_prev_round[-1] > 0
+                    sum_of_loss_of_prev += loss_of_prev_round[-1]
                 else:
                     assert loss_of_prev_round[-1] == -1
-                    loss_of_prev_round[-1] = 1
+            for i in range(pool_size):
+                if i not in cids_in_prev_round:
+                    assert loss_of_prev_round[i] == -1
+                    # For those did not involve in previous rounds, loss should be the average
+                    loss_of_prev_round[i] = sum_of_loss_of_prev / len(cids_in_prev_round)
 
             log(DEBUG, "Loss in previous round: " + str(loss_of_prev_round))
 
@@ -112,21 +123,30 @@ class MAB_ClientManager(SimpleClientManager):
 
             log(DEBUG, "Sum of C in previous round: " + str(sum_of_prev_C))
             
-            UCB_mu = [sum_of_prev_C[i] / (involvement_history[i] + 1) for i in range(pool_size)]
+            UCB_mu = []
+            for i in range(pool_size):
+                if involvement_history[i] == 0:
+                    UCB_mu.append(0)
+                else:
+                    UCB_mu.append(sum_of_prev_C[i] / involvement_history[i])
 
             log(DEBUG, "UCB_mu: " + str(UCB_mu))
 
-            UCB_U = [
-                UCB_mu[i] + math.sqrt(
-                    (num_to_choose + 1) * math.log(server_round) / (involvement_history[i] + 1)
-                ) \
-                for i in range(pool_size)
-            ]
-
-            log(DEBUG, "UCB_U: " + str(UCB_U))
+            UCB_u = []
+            for i in range(pool_size):
+                if involvement_history[i] == 0:
+                    UCB_u.append(0)
+                else:
+                    UCB_u.append(
+                        UCB_mu[i] + math.sqrt(
+                            (num_to_choose + 1) * math.log(server_round) / involvement_history[i]
+                        )
+                    )
+                
+            log(DEBUG, "UCB_U: " + str(UCB_u))
 
             UCB_omega = [
-                -UCB_U[i] - beta * math.pow(math.e, (-param_dicts[i]["D"])) \
+                -UCB_u[i] - beta * math.pow(math.e, (-param_dicts[i]["D"])) \
                 for i in range(pool_size)
             ]
 
@@ -324,19 +344,19 @@ class BSFL(Strategy):
                 outputFile.write(str(involvement_history))
 
         # Time constraint
-        if server_round == 1:
-            C_T_i = timeConstrGlobal / num_rounds
-        else:
-            with open(
-                    "./output/fit_server/round_{}.txt".format(server_round - 1)
-            ) as inputFile:
-                fit_round_dict = eval(inputFile.readline())
-                C_T_i = timeConstrGlobal / num_rounds + \
-                        fit_round_dict["time_constraint"] - fit_round_dict["time_elapsed"]
+        # if server_round == 1:
+        #     C_T_i = timeConstrGlobal / num_rounds
+        # else:
+        #     with open(
+        #             "./output/fit_server/round_{}.txt".format(server_round - 1)
+        #     ) as inputFile:
+        #         fit_round_dict = eval(inputFile.readline())
+        #         C_T_i = timeConstrGlobal / num_rounds + \
+        #                 fit_round_dict["time_constraint"] - fit_round_dict["time_elapsed"]
 
         # Sample clients
         clients, fit_round_dict, param_dicts = client_manager.sample(
-            num_clients=0, server_round=server_round, time_constr=C_T_i
+            num_clients=0, server_round=server_round, time_constr=timeConstrGlobal
         )
 
         # Record information of clients

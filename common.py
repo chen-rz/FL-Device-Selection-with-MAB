@@ -6,6 +6,8 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 from numpy.random import BitGenerator, Generator, SeedSequence
 
+import random
+
 XY = Tuple[np.ndarray, np.ndarray]
 XYList = List[XY]
 PartitionedDataset = Tuple[XYList, XYList]
@@ -410,8 +412,18 @@ def create_lda_partitions(
         )
 
     num_samples = num_partitions * [0]
-    for j in range(x.shape[0]):
-        num_samples[j % num_partitions] += 1
+    
+    avg_num_samples = x.shape[0] / num_partitions
+    samples_left = x.shape[0]
+    for j in range(num_partitions - 1):
+        num_samples[j] = int(avg_num_samples * random.uniform(0.8, 1.2))
+        samples_left -= num_samples[j]
+    num_samples[num_partitions - 1] = samples_left
+
+    # *** This causes equal number of data per partition! ***
+    # *** WHY DO YOU USE SUCH A STUPID METHOD??? ***
+    # for j in range(x.shape[0]):
+    #     num_samples[j % num_partitions] += 1
 
     # Get number of classes and verify if they're matching with
     classes, start_indices = np.unique(y, return_index=True)

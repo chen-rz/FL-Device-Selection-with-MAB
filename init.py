@@ -17,33 +17,22 @@ fed_dir = do_fl_partitioning(
     train_path, pool_size=pool_size, alpha=1, num_classes=10, val_ratio=0.1
 )
 
-# Record dataset sizes (bit)
+# Record dataset sizes (number of data instances)
 with open("./parameters/dataSize.txt", mode='w') as outputFile:
+    outputFile.write("")
+with open("./output/label_distribution_histograms.txt", mode='r') as inputFile, \
+    open("./parameters/dataSize.txt", mode='a') as outputFile:
     for n in range(pool_size):
-        n_DL = get_dataloader(
-            "./data/cifar-10-batches-py/federated/",
-            str(n),
-            is_train=True,
-            batch_size=1,
-            workers=50
-        )
-        outputFile.write(
-            str(
-                # 8 * os.path.getsize(
-                #     "./data/cifar-10-batches-py/federated/" + str(n) + "/train.pt"
-                # )
-
-                len(n_DL)
-            )
-            + "\n"
-        )
+        hist_line = inputFile.readline()
+        assert hist_line
+        outputFile.write(str(sum(eval(hist_line))) + "\n")
 print("Dataset initialization completed")
 
 # Define CPU/GPU frequency (FLOPs)
 # *** frequency is actually flops! ***
 with open("./parameters/frequency.txt", mode='w') as outputFile:
     for n in range(pool_size):
-        outputFile.write(str(random.uniform(1e8, 5e9)) + "\n")
+        outputFile.write(str(random.uniform(7e9, 8e9)) + "\n")
 print("CPU/GPU frequency initialization completed")
 
 # Define cycles per bit
@@ -55,5 +44,5 @@ print("CPU/GPU frequency initialization completed")
 # Define transmission power
 with open("./parameters/transPower.txt", mode='w') as outputFile:
     for n in range(pool_size):
-        outputFile.write(str(random.uniform(5e-4, 5e-3)) + "\n")
+        outputFile.write(str(random.uniform(1e-3, 5e-3)) + "\n")
 print("Transmission power initialization completed")

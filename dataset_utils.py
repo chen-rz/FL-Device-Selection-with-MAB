@@ -67,7 +67,7 @@ def do_fl_partitioning(path_to_dataset, pool_size, alpha, num_classes, val_ratio
         for n in range(pool_size):
             partition_n = partitions[n][1]
             hist, _ = np.histogram(partition_n, bins=list(range(num_classes + 1)))
-            outputFile.write(str(hist) + "\n")
+            outputFile.write(str(list(hist)) + "\n")
     print(
         f"Label distribution histograms saved, alpha = {alpha}, {num_classes} classes"
     )

@@ -9,6 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 import torchvision
 from flwr.common import Scalar
+import random
 
 from dataset_utils import get_dataloader
 from utils import *
@@ -32,10 +33,14 @@ class FlowerClient(fl.client.NumPyClient):
         # Random initialized parameters
         # self.properties["cyclePerBit"] = param_dict["cyclePerBit"]
         self.properties["dataSize"] = param_dict["dataSize"]
-        self.properties["frequency"] = param_dict["frequency"] # *** frequency is actually flops! ***
+        # *** frequency is actually flops! ***
+        self.properties["frequency"] = param_dict["frequency"] * random.uniform(0.5, 1.5)
+
         self.properties["transPower"] = param_dict["transPower"]
 
-        self.properties["updateTime"] = fit_config(0)["epochs"] * sys_modelFlops / self.properties["frequency"]
+        self.properties["updateTime"] = \
+            fit_config(0)["epochs"] * sys_modelFlops * self.properties["dataSize"] \
+                / self.properties["frequency"]
 
     def get_properties(self, config) -> Dict[str, Scalar]:
         return self.properties

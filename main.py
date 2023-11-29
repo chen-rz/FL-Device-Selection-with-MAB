@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     # clear previous records
     path_to_init = ["fit_clients", "fit_server", "loss_avg",
-                    "train_loss", "val_accu", "val_loss"]
+                    "train_loss", "val_accu", "val_loss", "C_records"]
     for _ in path_to_init:
         if Path("output/" + _ + "/").exists():
             shutil.rmtree("output/" + _ + "/")
@@ -129,3 +129,14 @@ if __name__ == "__main__":
                     mode='a'
             ) as outputFile:
                 outputFile.write("-1" + "\n")
+    
+    # Record involvements of last round
+    with open("./output/involvement_history.txt", mode='r') as inputFile:
+        fileLine = inputFile.readline()
+        assert fileLine
+        involvement_history = eval(fileLine)
+    for _ in range(pool_size):
+        if _ in clients_of_last_round:
+            involvement_history[_] += 1
+    with open("./output/involvement_history.txt", mode='w') as outputFile:
+        outputFile.write(str(involvement_history))
