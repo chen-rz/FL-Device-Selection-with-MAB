@@ -32,6 +32,8 @@ if __name__ == "__main__":
 
     with open("./output/reward.txt", mode='w') as outputFile:
         outputFile.write("")
+    with open("./output/regret.txt", mode='w') as outputFile:
+        outputFile.write("")
     with open("./output/involvement_history.txt", mode='w') as outputFile:
         outputFile.write("")
 

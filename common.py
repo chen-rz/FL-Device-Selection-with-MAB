@@ -414,11 +414,20 @@ def create_lda_partitions(
     num_samples = num_partitions * [0]
     
     avg_num_samples = x.shape[0] / num_partitions
-    samples_left = x.shape[0]
-    for j in range(num_partitions - 1):
-        num_samples[j] = int(avg_num_samples * random.uniform(0.8, 1.2))
-        samples_left -= num_samples[j]
-    num_samples[num_partitions - 1] = samples_left
+    need_restart = True
+    while need_restart:
+        need_restart = False
+        num_samples = num_partitions * [0]
+        samples_left = x.shape[0]
+        for j in range(num_partitions - 1):
+            num_samples[j] = int(avg_num_samples * random.uniform(0.75, 1.25))
+            samples_left -= num_samples[j]
+            if samples_left <= 0:
+                need_restart = True
+                print("Failed to create a partition with data heterogeneity: samples ran out due to improper random numbers, retrying")
+                break
+        num_samples[num_partitions - 1] = samples_left
+    print("Successfully created a data-heterogeneous partition")
 
     # *** This causes equal number of data per partition! ***
     # *** WHY DO YOU USE SUCH A STUPID METHOD??? ***

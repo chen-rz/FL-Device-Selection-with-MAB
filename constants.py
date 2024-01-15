@@ -16,8 +16,12 @@ timeConstrGlobal = 10
 sys_modelFlops = 523878 # LeNet
 # sys_modelFlops = 712651338 # AlexNet
 
-# Beta
-beta = 0.5
+# Alpha, Beta # TODO
+alpha = 0.3
+beta = 20
+
+# Volatility
+num_on_strike = 20
 
 # Channel gain
 sys_channelGain = 4e-11

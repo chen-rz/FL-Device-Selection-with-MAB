@@ -34,7 +34,7 @@ class FlowerClient(fl.client.NumPyClient):
         # self.properties["cyclePerBit"] = param_dict["cyclePerBit"]
         self.properties["dataSize"] = param_dict["dataSize"]
         # *** frequency is actually flops! ***
-        self.properties["frequency"] = param_dict["frequency"] * random.uniform(0.5, 1.5)
+        self.properties["frequency"] = param_dict["frequency"] * random.uniform(0.5, 2.0) # Random variation on computational capability
 
         self.properties["transPower"] = param_dict["transPower"]
 

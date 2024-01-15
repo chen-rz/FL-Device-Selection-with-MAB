@@ -32,7 +32,7 @@ print("Dataset initialization completed")
 # *** frequency is actually flops! ***
 with open("./parameters/frequency.txt", mode='w') as outputFile:
     for n in range(pool_size):
-        outputFile.write(str(random.uniform(7e9, 8e9)) + "\n")
+        outputFile.write(str(random.uniform(6e9, 8e9)) + "\n")
 print("CPU/GPU frequency initialization completed")
 
 # Define cycles per bit

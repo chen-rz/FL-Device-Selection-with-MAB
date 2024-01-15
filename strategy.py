@@ -27,7 +27,8 @@ class MAB_ClientManager(SimpleClientManager):
     def sample(self, num_clients: int, server_round=0, time_constr=0):
         # For model initialization
         if num_clients == 1:
-            return [self.clients[str(random.randint(0, pool_size - 1))]]
+            # return [self.clients[str(random.randint(0, pool_size - 1))]]
+            return [self.clients[str(0)]]
 
         # For evaluation, use the same devices as in the fit round
         elif num_clients == -1:
@@ -44,6 +45,45 @@ class MAB_ClientManager(SimpleClientManager):
 
         C_record = []
         updateTimeList = []
+
+        # Get info of previous round
+        if server_round == 1:
+            init_parameters = self.clients["0"].get_parameters(
+                ins=GetParametersIns(config={}),
+                timeout=None
+            ).parameters
+            init_param_ndarrays = parameters_to_ndarrays(init_parameters)
+            init_eval_func = clt.get_evaluate_fn(
+                torchvision.datasets.CIFAR10(
+                    root="./data", train=False, transform=cifar10Transformation()
+                )
+            )
+            eval_res = init_eval_func(0, init_param_ndarrays, {})
+            L_prev = eval_res[0]
+
+        else:
+            with open("./output/fit_server/round_{}.txt".format(server_round - 1)) as inputFile:
+                cids_in_prev_round = eval(inputFile.readline())["clients_selected"]
+
+            valid_loss_sum, valid_n_num = 0.0, 0
+            loss_of_prev_round = []
+
+            for n in range(pool_size):
+                with open("./output/val_loss/client_{}.txt".format(n)) as inputFile:
+                    loss_of_prev_round.append(eval(inputFile.readlines()[-1]))
+                if n in cids_in_prev_round:
+                    assert loss_of_prev_round[-1] > 0
+                    valid_loss_sum += loss_of_prev_round[-1]
+                    valid_n_num += 1
+                else:
+                    assert loss_of_prev_round[-1] == -1
+
+            L_prev = valid_loss_sum / valid_n_num
+
+        with open(
+                "./output/loss_avg/L_{}.txt".format(server_round - 1), mode='w'
+        ) as outputFile:
+            outputFile.write(str(L_prev))
 
         for n in range(pool_size):
             # Get each client's parameters
@@ -65,29 +105,40 @@ class MAB_ClientManager(SimpleClientManager):
         with open("./output/C_records/round_{}.txt".format(server_round), mode='w') as outputFile:
             outputFile.write(str(C_record))
         
-        log(DEBUG, "Wrote C_record: " + str(C_record))
+        # log(DEBUG, "Wrote C_record: " + str(C_record))
 
         # 1st iteration: data size only
         if server_round == 1:
             for i in range(pool_size):
-                param_dicts[i]["D"] = param_dicts[i]["dataSize"]
+                param_dicts[i]["sigmoid"] = 1
+                param_dicts[i]["g"] = 0
+
+            # Volatility
+            active_cids = list(range(pool_size))
+            for _ in range(num_on_strike):
+                pop_idx = random.randint(0, len(active_cids) - 1)
+                active_cids.pop(pop_idx)
 
             available_cids = sorted(
-                range(pool_size), key=lambda i: param_dicts[i]["dataSize"], reverse=True
+                active_cids, key=lambda i: param_dicts[i]["dataSize"], reverse=True
             )[:num_to_choose]
 
         # Common cases
         else:
             with open("./output/involvement_history.txt", mode='r') as inputFile:
                 involvement_history = eval(inputFile.readline())
+            for i in range(pool_size):
+                param_dicts[i]["involvement_history"] = involvement_history[i]
 
             log(DEBUG, "Involvement history: " + str(involvement_history))
 
-            with open("./output/fit_server/round_{}.txt".format(server_round - 1)) \
-                    as inputFile:
+            with open("./output/fit_server/round_{}.txt".format(server_round - 1)) as inputFile:
                 cids_in_prev_round = eval(inputFile.readline())["clients_selected"]
 
-            log(DEBUG, "Cids in previous round: " + str(cids_in_prev_round))
+            # log(DEBUG, "Cids in previous round: " + str(cids_in_prev_round))
+
+            with open("./output/loss_avg/L_{}.txt".format(server_round - 2)) as inputFile:
+                L_2 = eval(inputFile.readline())
 
             loss_of_prev_round = []
             sum_of_loss_of_prev = 0.0
@@ -103,13 +154,16 @@ class MAB_ClientManager(SimpleClientManager):
                 if i not in cids_in_prev_round:
                     assert loss_of_prev_round[i] == -1
                     # For those did not involve in previous rounds, loss should be the average
-                    loss_of_prev_round[i] = sum_of_loss_of_prev / len(cids_in_prev_round)
+                    # loss_of_prev_round[i] = sum_of_loss_of_prev / len(cids_in_prev_round)
+                    loss_of_prev_round[i] = L_2
 
-            log(DEBUG, "Loss in previous round: " + str(loss_of_prev_round))
+            # log(DEBUG, "Loss in previous round: " + str(loss_of_prev_round))
 
             for i in range(pool_size):
-                param_dicts[i]["D"] = param_dicts[i]["dataSize"] \
-                     * loss_of_prev_round[i] / (involvement_history[i] + 1)
+                # delta = L_2 - loss_of_prev_round[i]
+                delta = (L_2 - loss_of_prev_round[i]) / L_2 # TODO Normalized loss delta
+                # param_dicts[i]["sigmoid"] = 1 / (1 + math.pow(math.e, - delta))
+                param_dicts[i]["sigmoid"] = 1 / (1 + math.pow(math.e, - 5 * delta)) # TODO Weird Sigmoid
                 
             sum_of_prev_C = [0 for _ in range(pool_size)]
             for t in range(1, server_round):
@@ -121,7 +175,7 @@ class MAB_ClientManager(SimpleClientManager):
                     if _ in cids_in_t_round:
                         sum_of_prev_C[_] += C_in_t_round[_]
 
-            log(DEBUG, "Sum of C in previous round: " + str(sum_of_prev_C))
+            # log(DEBUG, "Sum of C in previous round: " + str(sum_of_prev_C))
             
             UCB_mu = []
             for i in range(pool_size):
@@ -129,8 +183,9 @@ class MAB_ClientManager(SimpleClientManager):
                     UCB_mu.append(0)
                 else:
                     UCB_mu.append(sum_of_prev_C[i] / involvement_history[i])
+                param_dicts[i]["UCB_mu"] = UCB_mu[i]
 
-            log(DEBUG, "UCB_mu: " + str(UCB_mu))
+            # log(DEBUG, "UCB_mu: " + str(UCB_mu))
 
             UCB_u = []
             for i in range(pool_size):
@@ -142,18 +197,44 @@ class MAB_ClientManager(SimpleClientManager):
                             (num_to_choose + 1) * math.log(server_round) / involvement_history[i]
                         )
                     )
+                param_dicts[i]["UCB_U"] = UCB_u[i]
                 
-            log(DEBUG, "UCB_U: " + str(UCB_u))
+            # log(DEBUG, "UCB_U: " + str(UCB_u))
 
-            UCB_omega = [
-                -UCB_u[i] - beta * math.pow(math.e, (-param_dicts[i]["D"])) \
-                for i in range(pool_size)
-            ]
+            denominator = 0.0
+            for k in cids_in_prev_round:
+                denominator += param_dicts[k]["dataSize"] * param_dicts[k]["sigmoid"]
 
-            log(DEBUG, "UCB_omega: " + str(UCB_omega))
+            for i in range(pool_size):
+                sgn = (num_to_choose * param_dicts[i]["dataSize"] * param_dicts[i]["sigmoid"] / denominator) \
+                    - (involvement_history[i] / server_round)
+                if sgn > 0:
+                    sgn = 1
+                elif sgn < 0:
+                    sgn = -1
+                
+                param_dicts[i]["g"] = sgn * math.pow(
+                    abs(
+                        (num_to_choose * param_dicts[i]["dataSize"] * param_dicts[i]["sigmoid"] / denominator) \
+                        - (involvement_history[i] / server_round)
+                    ),
+                    alpha
+                )
+
+            UCB_omega = [(- UCB_u[i] + beta * param_dicts[i]["g"]) for i in range(pool_size)]
+            for i in range(pool_size):
+                param_dicts[i]["UCB_omega"] = UCB_omega[i]
+
+            # log(DEBUG, "UCB_omega: " + str(UCB_omega))
+
+            # Volatility
+            active_cids = list(range(pool_size))
+            for _ in range(num_on_strike):
+                pop_idx = random.randint(0, len(active_cids) - 1)
+                active_cids.pop(pop_idx)
 
             available_cids = sorted(
-                range(pool_size), key=lambda i: UCB_omega[i], reverse=True
+                active_cids, key=lambda i: UCB_omega[i], reverse=True
             )[:num_to_choose]
 
         # Record client parameters
@@ -166,13 +247,34 @@ class MAB_ClientManager(SimpleClientManager):
         # Record reward
         reward = 0
         for k in available_cids:
-            reward += (-param_dicts[k]["C"] - beta * math.pow(math.e, (-param_dicts[k]["D"])))
+            reward += (- param_dicts[k]["C"] + beta * param_dicts[k]["g"])
         reward *= (1 / num_to_choose)
         with open("./output/reward.txt", mode='a') as outputFile:
             outputFile.write(str(reward) + "\n")
 
+        # Calculate regret
+        best_cids = sorted(
+            active_cids, key=lambda i: (- param_dicts[i]["C"] + beta * param_dicts[i]["g"]),
+            reverse=True
+        )[:num_to_choose]
+        best_reward = 0
+        for k in best_cids:
+            best_reward += (- param_dicts[k]["C"] + beta * param_dicts[k]["g"])
+        best_reward *= (1 / num_to_choose)
+        regret_of_round = best_reward - reward
+        with open("./output/regret.txt", mode='r') as inputFile:
+            lines = inputFile.readlines()
+            if lines:
+                last_regret = eval(lines[-1])
+            else:
+                last_regret = 0.0
+        with open("./output/regret.txt", mode='a') as outputFile:
+            outputFile.write(str(last_regret + regret_of_round) + "\n")
+
         log(DEBUG, "Round " + str(server_round) + " selected cids " + str(available_cids))
         log(DEBUG, "Round " + str(server_round) + " reward: " + str(reward))
+        log(DEBUG, "Round " + str(server_round) + " best cids: " + str(best_cids))
+        log(DEBUG, "Round " + str(server_round) + " best reward: " + str(best_reward))
 
         return [self.clients[str(cid)] for cid in available_cids], \
             {

@@ -13,7 +13,7 @@ sys_modelFlops=
 
 ## torch.device
 ### client.py
-1. class FlowerClient __init__
+1. class FlowerClient \_\_init\_\_
 2. def get_evaluate_fn
 
 ## constants.py
